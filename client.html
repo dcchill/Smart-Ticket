@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SmartTicket Client Portal</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-app="client">
+    <main class="client-page">
+      <section class="client-hero">
+        <div>
+          <span class="eyebrow" data-portal-name>SmartTicket</span>
+          <h1>Submit an IT ticket</h1>
+          <p id="clientSupportText">Send issues directly to IT with smart routing and email updates.</p>
+        </div>
+      </section>
+
+      <section class="panel client-panel">
+        <form class="ticket-form" id="clientTicketForm">
+          <div class="form-grid">
+            <label data-client-field="requester"><span>Your name</span><input name="requester" required placeholder="Alex Johnson" /></label>
+            <label data-client-field="requesterEmail"><span>Your email</span><input name="requesterEmail" type="email" required placeholder="alex@example.com" /></label>
+            <label data-client-field="departmentId"><span data-unit-singular>Department</span><select name="departmentId" id="clientDepartment" required></select></label>
+            <label data-client-field="deviceId"><span>Device or app</span><select name="deviceId" id="clientDevice" required></select></label>
+            <label data-client-field="impact"><span>Impact</span><select name="impact" id="clientImpact" required></select></label>
+            <label data-client-field="phone"><span>Phone</span><input name="phone" placeholder="Optional callback number" /></label>
+          </div>
+          <label data-client-field="title"><span>Issue summary</span><input name="title" required placeholder="Cannot connect to VPN" /></label>
+          <label data-client-field="description">
+            <span>Description</span>
+            <textarea name="description" required placeholder="Describe symptoms, error messages, timing, and what changed recently."></textarea>
+            <small class="help-text">Include any error messages, when it started, and what you already tried.</small>
+          </label>
+          <label>
+            <span>Attachments</span>
+            <input name="attachments" id="clientAttachments" type="file" multiple />
+            <small class="help-text">Optional. You can attach screenshots or documents up to 10 MB each.</small>
+          </label>
+          <div class="file-list" id="clientFileList" aria-live="polite"></div>
+          <div class="form-actions">
+            <button class="secondary-action" type="reset">Clear</button>
+            <button class="primary-action" type="submit" id="clientSubmitButton">Submit ticket</button>
+          </div>
+        </form>
+        <div class="notice" id="clientNotice"></div>
+      </section>
+
+      <section class="panel client-panel">
+        <h2>Check Ticket Status</h2>
+        <form class="ticket-form" id="ticketLookupForm">
+          <div class="form-grid">
+            <label><span>Ticket ID</span><input name="ticketId" id="lookupTicketId" required placeholder="TKT-2026-1234" /></label>
+            <label><span>Email</span><input name="email" type="email" required placeholder="alex@example.com" /></label>
+          </div>
+          <div class="form-actions">
+            <button class="primary-action" type="submit">Look up ticket</button>
+          </div>
+        </form>
+        <div id="ticketLookupResult"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

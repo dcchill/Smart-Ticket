@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SmartTicket Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-app="admin">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Admin navigation">
+        <a class="brand" href="/admin">
+          <span class="brand-mark">ST</span>
+          <span><strong>SmartTicket</strong><small>Admin console</small></span>
+        </a>
+        <nav class="nav-list">
+          <button class="nav-item" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-item active" type="button" data-view="queue">Queue</button>
+          <button class="nav-item" type="button" data-view="catalog"><span data-unit-plural>Departments</span> & devices</button>
+          <button class="nav-item" type="button" data-view="knowledge">Knowledge</button>
+          <button class="nav-item" type="button" data-view="settings">Email and Settings</button>
+        </nav>
+        <a class="client-link" href="/client">Open client portal</a>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>Admin Ticket Queue</h1>
+            <p>Review, route, prioritize, update, and resolve employee IT tickets.</p>
+          </div>
+          <a class="primary-action link-button" href="/data/tickets.csv">Download CSV</a>
+        </header>
+
+        <section class="metrics" aria-label="Ticket metrics">
+          <article class="metric"><span>Open</span><strong id="openCount">0</strong></article>
+          <article class="metric"><span>Critical</span><strong id="criticalCount">0</strong></article>
+          <article class="metric"><span>Waiting</span><strong id="waitingCount">0</strong></article>
+          <article class="metric"><span>Resolved</span><strong id="resolvedCount">0</strong></article>
+        </section>
+
+        <section class="view" id="dashboardView">
+          <section class="panel">
+            <h2>Dashboard Insights</h2>
+            <div class="insight-grid" id="insightGrid"></div>
+          </section>
+        </section>
+
+        <section class="view active" id="queueView">
+          <div class="toolbar">
+            <label><span>Search</span><input id="searchInput" type="search" placeholder="Ticket, requester, asset, text" /></label>
+            <label><span>Status</span><select id="statusFilter"></select></label>
+            <label><span>Priority</span><select id="priorityFilter"></select></label>
+          </div>
+          <div class="content-grid">
+            <section class="ticket-list" id="ticketList" aria-label="Tickets"></section>
+            <section class="ticket-detail" id="ticketDetail" aria-live="polite"></section>
+          </div>
+        </section>
+
+        <section class="view" id="catalogView">
+          <div class="two-column">
+            <section class="panel">
+              <h2 data-unit-plural>Departments</h2>
+              <form class="inline-form" id="departmentForm">
+                <input name="name" required placeholder="Name" />
+                <button class="primary-action" type="submit">Add</button>
+              </form>
+              <div class="notice" id="departmentNotice"></div>
+              <div class="table-list" id="departmentList"></div>
+            </section>
+            <section class="panel">
+              <h2>Devices & apps</h2>
+              <form class="stack-form" id="deviceForm">
+                <input name="name" required placeholder="Device or app name" />
+                <input name="owner" placeholder="Owner or support team" />
+                <button class="primary-action" type="submit">Add device</button>
+              </form>
+              <div class="notice" id="deviceNotice"></div>
+              <div class="table-list" id="deviceList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="knowledgeView">
+          <section class="panel">
+            <h2>Knowledge Base</h2>
+            <form class="stack-form" id="knowledgeForm">
+              <input name="title" required placeholder="Article title" />
+              <input name="keywords" required placeholder="Keywords separated by commas" />
+              <textarea name="fix" required placeholder="Resolution steps or suggested fix"></textarea>
+              <button class="primary-action" type="submit">Add article</button>
+            </form>
+            <div class="knowledge-grid" id="knowledgeGrid"></div>
+          </section>
+        </section>
+
+        <section class="view" id="settingsView">
+          <section class="panel">
+            <h2>Email and Settings</h2>
+            <p class="muted">Configure portal wording, ticket defaults, SLA targets, and email notifications. SMTP credentials are read from environment variables.</p>
+            <form class="stack-form" id="settingsForm">
+              <div class="form-grid">
+                <label><span>Portal name</span><input name="portalName" placeholder="SmartTicket" /></label>
+                <label><span>Support contact</span><input name="supportContact" placeholder="helpdesk@example.com or extension 1234" /></label>
+                <label>
+                  <span>Client portal grouping</span>
+                  <select name="unitType">
+                    <option value="departments">Departments</option>
+                    <option value="classrooms">Classrooms</option>
+                  </select>
+                </label>
+                <label><span>Ticket prefix</span><input name="ticketPrefix" maxlength="12" placeholder="TKT" /></label>
+                <label><span>Default assignee</span><input name="defaultAssignee" placeholder="IT Operations" /></label>
+                <label>
+                  <span>Default status</span>
+                  <select name="defaultStatus">
+                    <option>Open</option>
+                    <option>In Progress</option>
+                    <option>Waiting</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-grid">
+                <label><span>Critical SLA hours</span><input name="slaCritical" type="number" min="1" max="720" /></label>
+                <label><span>High SLA hours</span><input name="slaHigh" type="number" min="1" max="720" /></label>
+                <label><span>Medium SLA hours</span><input name="slaMedium" type="number" min="1" max="720" /></label>
+                <label><span>Low SLA hours</span><input name="slaLow" type="number" min="1" max="720" /></label>
+              </div>
+              <label>
+                <span>Impact options</span>
+                <textarea name="impactOptions" placeholder="Single user&#10;Team blocked&#10;Business critical"></textarea>
+              </label>
+              <label>
+                <span>Allowed client origins</span>
+                <textarea name="allowedOrigins" placeholder="https://www.yourwixsite.com&#10;https://www.yourdomain.com"></textarea>
+              </label>
+              <label><span>Admin notification emails</span><input name="adminEmails" placeholder="admin@example.com, helpdesk@example.com" /></label>
+              <label class="checkbox-row"><input name="notifyAdmins" type="checkbox" /> Email admins when tickets are opened</label>
+              <label class="checkbox-row"><input name="notifyRequesters" type="checkbox" /> Email users when tickets are opened or updated</label>
+              <div class="settings-block">
+                <h3>Client Form Fields</h3>
+                <p class="muted">Choose which fields appear on the client portal and which visible fields must be completed.</p>
+                <div class="field-settings" id="clientFieldSettings">
+                  <div class="field-setting header"><span>Field</span><span>Show</span><span>Require</span></div>
+                  <div class="field-setting"><span>Name</span><input name="field_requester_enabled" type="checkbox" /><input name="field_requester_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Email</span><input name="field_requesterEmail_enabled" type="checkbox" /><input name="field_requesterEmail_required" type="checkbox" /></div>
+                  <div class="field-setting"><span data-unit-singular>Department</span><input name="field_departmentId_enabled" type="checkbox" /><input name="field_departmentId_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Device or app</span><input name="field_deviceId_enabled" type="checkbox" /><input name="field_deviceId_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Impact</span><input name="field_impact_enabled" type="checkbox" /><input name="field_impact_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Phone</span><input name="field_phone_enabled" type="checkbox" /><input name="field_phone_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Issue summary</span><input name="field_title_enabled" type="checkbox" /><input name="field_title_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Description</span><input name="field_description_enabled" type="checkbox" /><input name="field_description_required" type="checkbox" /></div>
+                </div>
+              </div>
+              <button class="primary-action" type="submit">Save settings</button>
+            </form>
+            <div class="notice" id="emailStatus"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

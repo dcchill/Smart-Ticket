@@ -1,0 +1,209 @@
+<!--
+  SmartTicket Wix client embed.
+  Paste this into a Wix "Embed HTML" element, then set API_BASE to your public on-site SmartTicket URL.
+  Example: const API_BASE = "https://tickets.yourdomain.com";
+-->
+<div id="smartticket-wix-client"></div>
+<script>
+(() => {
+  const API_BASE = "https://tickets.yourdomain.com";
+  const root = document.getElementById("smartticket-wix-client");
+  const state = { departments: [], devices: [], settings: {} };
+  const clientFields = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "title", "description"];
+
+  root.innerHTML = `
+    <style>
+      .st-wrap{font-family:Inter,Arial,sans-serif;color:#17212b;background:#f5f7fa;padding:18px;border-radius:8px}
+      .st-panel{background:#fff;border:1px solid #dce4eb;border-radius:8px;padding:18px;margin-bottom:16px}
+      .st-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      .st-field{display:block}.st-field span{display:block;color:#65727f;font-size:13px;font-weight:800;margin-bottom:6px}
+      .st-field input,.st-field select,.st-field textarea{width:100%;min-height:42px;border:1px solid #dce4eb;border-radius:8px;padding:10px;box-sizing:border-box}
+      .st-field textarea{min-height:120px}.st-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
+      .st-btn{border:0;border-radius:8px;min-height:42px;padding:0 16px;font-weight:800;cursor:pointer}
+      .st-primary{background:#2368d8;color:#fff}.st-secondary{background:#e8edf2;color:#17212b}
+      .st-notice{margin-top:12px;color:#65727f}.st-success{color:#268052}.st-error{color:#bd3c3c}
+      .st-row{border:1px solid #dce4eb;border-radius:8px;padding:10px;margin-top:8px}
+      .st-help{display:block;margin-top:6px;color:#65727f;line-height:1.35}
+      .st-files{display:grid;gap:6px;margin-top:8px;color:#65727f}
+      .st-files div{display:flex;justify-content:space-between;gap:12px;border:1px solid #dce4eb;border-radius:8px;padding:8px 10px;background:#fff}
+      .st-confirm{display:grid;gap:8px}.st-confirm p{margin:0;color:#65727f}.st-confirm button{justify-self:start}
+      .st-btn:disabled,.st-field input:disabled,.st-field select:disabled,.st-field textarea:disabled{cursor:not-allowed;opacity:.72}
+      @media(max-width:680px){.st-grid{grid-template-columns:1fr}}
+    </style>
+    <div class="st-wrap">
+      <section class="st-panel">
+        <h2 id="stTitle">Submit an IT ticket</h2>
+        <p id="stSupport"></p>
+        <form id="stTicketForm">
+          <div class="st-grid">
+            ${field("requester","Your name",'<input name="requester" placeholder="Alex Johnson">')}
+            ${field("requesterEmail","Your email",'<input name="requesterEmail" type="email" placeholder="alex@example.com">')}
+            ${field("departmentId","Department",'<select name="departmentId" id="stDepartment"></select>')}
+            ${field("deviceId","Device or app",'<select name="deviceId" id="stDevice"></select>')}
+            ${field("impact","Impact",'<select name="impact" id="stImpact"></select>')}
+            ${field("phone","Phone",'<input name="phone" placeholder="Optional callback number">')}
+          </div>
+          ${field("title","Issue summary",'<input name="title" placeholder="Cannot connect to Wi-Fi">')}
+          ${field("description","Description",'<textarea name="description" placeholder="Describe symptoms, error messages, timing, and what changed recently."></textarea><small class="st-help">Include any error messages, when it started, and what you already tried.</small>')}
+          <label class="st-field"><span>Attachments</span><input name="attachments" id="stAttachments" type="file" multiple><small class="st-help">Optional. You can attach screenshots or documents up to 10 MB each.</small></label>
+          <div class="st-files" id="stFileList" aria-live="polite"></div>
+          <div class="st-actions"><button class="st-btn st-secondary" type="reset">Clear</button><button class="st-btn st-primary" id="stSubmitButton" type="submit">Submit ticket</button></div>
+        </form>
+        <div class="st-notice" id="stNotice"></div>
+      </section>
+      <section class="st-panel">
+        <h2>Check Ticket Status</h2>
+        <form id="stLookupForm">
+          <div class="st-grid">
+            <label class="st-field"><span>Ticket ID</span><input name="ticketId" id="stLookupTicketId" required placeholder="TKT-2026-1234"></label>
+            <label class="st-field"><span>Email</span><input name="email" type="email" required placeholder="alex@example.com"></label>
+          </div>
+          <div class="st-actions"><button class="st-btn st-primary" type="submit">Look up ticket</button></div>
+        </form>
+        <div id="stLookupResult"></div>
+      </section>
+    </div>
+  `;
+
+  function field(name, label, control) {
+    return `<label class="st-field" data-client-field="${name}"><span>${label}</span>${control}</label>`;
+  }
+
+  async function init() {
+    const catalog = await request("/api/client-options");
+    Object.assign(state, catalog);
+    document.getElementById("stTitle").textContent = `${state.settings.portalName || "SmartTicket"} ticket request`;
+    document.getElementById("stSupport").textContent = state.settings.supportContact ? `Support contact: ${state.settings.supportContact}` : "";
+    fill("stDepartment", state.departments.map((item) => [item.id, item.name]));
+    fill("stDevice", state.devices.map((item) => [item.id, item.name]));
+    fill("stImpact", impactOptions().map((item) => [item, item]));
+    applyFieldSettings();
+  }
+
+  document.getElementById("stTicketForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const notice = document.getElementById("stNotice");
+    const submitButton = document.getElementById("stSubmitButton");
+    const originalText = submitButton.textContent;
+    try {
+      if (!validateSelectedFiles()) return;
+      setSubmitting(true);
+      const response = await fetch(`${API_BASE}/api/tickets`, { method: "POST", body: new FormData(event.currentTarget) });
+      const ticket = await response.json();
+      if (!response.ok) throw new Error(ticket.error || "Request failed");
+      event.currentTarget.reset();
+      renderSelectedFiles();
+      await init();
+      notice.className = "st-notice st-success";
+      notice.innerHTML = ticketConfirmation(ticket);
+      notice.querySelector("[data-copy-ticket]")?.addEventListener("click", () => copyTicketId(ticket.id));
+    } catch (error) {
+      notice.className = "st-notice st-error";
+      notice.textContent = error.message;
+    } finally {
+      setSubmitting(false, originalText);
+    }
+  });
+
+  document.getElementById("stAttachments").addEventListener("change", renderSelectedFiles);
+  document.getElementById("stTicketForm").addEventListener("reset", () => window.setTimeout(renderSelectedFiles, 0));
+
+  document.getElementById("stLookupForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const target = document.getElementById("stLookupResult");
+    try {
+      const ticket = await request(`/api/tickets/${encodeURIComponent(form.get("ticketId"))}/lookup?email=${encodeURIComponent(form.get("email"))}`);
+      target.innerHTML = `<div class="st-notice st-success">Ticket found.</div>
+        <div class="st-row"><strong>${escapeHtml(ticket.id)}</strong><br>${escapeHtml(ticket.title)}</div>
+        <div class="st-row">Status: <strong>${escapeHtml(ticket.status)}</strong></div>
+        <div class="st-row">Assigned to: <strong>${escapeHtml(ticket.assignee)}</strong></div>`;
+    } catch (error) {
+      target.innerHTML = `<div class="st-notice st-error">${escapeHtml(error.message)}</div>`;
+    }
+  });
+
+  async function request(path) {
+    const response = await fetch(`${API_BASE}${path}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+  function fill(id, rows) {
+    document.getElementById(id).innerHTML = (rows.length ? rows : [["", "No options configured"]])
+      .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+  }
+  function impactOptions() {
+    return Array.isArray(state.settings.impactOptions) && state.settings.impactOptions.length ? state.settings.impactOptions : ["Single user", "Team blocked", "Business critical"];
+  }
+  function applyFieldSettings() {
+    clientFields.forEach((name) => {
+      const config = { enabled: true, required: false, ...(state.settings.clientFields?.[name] || {}) };
+      const field = root.querySelector(`[data-client-field="${name}"]`);
+      if (!field) return;
+      field.hidden = !config.enabled;
+      field.querySelectorAll("input,select,textarea").forEach((control) => {
+        control.disabled = !config.enabled;
+        control.required = config.enabled && config.required;
+      });
+    });
+  }
+  function prefillTicketLookup() {
+    const ticketId = new URLSearchParams(window.location.search).get("ticket");
+    const input = document.getElementById("stLookupTicketId");
+    if (ticketId && input) input.value = ticketId;
+  }
+  function renderSelectedFiles() {
+    const files = Array.from(document.getElementById("stAttachments").files || []);
+    document.getElementById("stFileList").innerHTML = files.length
+      ? files.map((file) => `<div>${escapeHtml(file.name)} <span>${formatFileSize(file.size)}</span></div>`).join("")
+      : "";
+  }
+  function validateSelectedFiles() {
+    const notice = document.getElementById("stNotice");
+    const oversized = Array.from(document.getElementById("stAttachments").files || []).filter((file) => file.size > 10 * 1024 * 1024);
+    if (!oversized.length) return true;
+    notice.className = "st-notice st-error";
+    notice.textContent = `${oversized[0].name} is larger than the 10 MB attachment limit.`;
+    return false;
+  }
+  function setSubmitting(isSubmitting, label = "Submit ticket") {
+    const form = document.getElementById("stTicketForm");
+    form.querySelectorAll("button,input,select,textarea").forEach((control) => {
+      if (isSubmitting) {
+        control.dataset.wasDisabled = control.disabled ? "true" : "false";
+        control.disabled = true;
+      } else {
+        control.disabled = control.dataset.wasDisabled === "true";
+        delete control.dataset.wasDisabled;
+      }
+    });
+    document.getElementById("stSubmitButton").textContent = isSubmitting ? "Submitting..." : label;
+  }
+  function ticketConfirmation(ticket) {
+    const emailLine = state.settings.notifyRequesters === false ? "Save this ticket ID for status checks." : "We emailed you a confirmation and will send updates as the ticket changes.";
+    const responseLine = ticket.slaHours ? `Target response window: ${ticket.slaHours} hours.` : "IT will review your request as soon as possible.";
+    return `<div class="st-confirm"><strong>Ticket ${escapeHtml(ticket.id)} was submitted.</strong><p>${escapeHtml(emailLine)}</p><p>${escapeHtml(responseLine)}</p><button class="st-btn st-secondary" type="button" data-copy-ticket>Copy ticket ID</button></div>`;
+  }
+  async function copyTicketId(ticketId) {
+    const button = root.querySelector("[data-copy-ticket]");
+    try {
+      await navigator.clipboard.writeText(ticketId);
+      if (button) button.textContent = "Copied";
+    } catch {
+      if (button) button.textContent = ticketId;
+    }
+  }
+  function formatFileSize(bytes) {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+  function escapeHtml(value) {
+    return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+  prefillTicketLookup();
+  init().catch((error) => {
+    root.innerHTML = `<div class="st-notice st-error">${escapeHtml(error.message)}</div>`;
+  });
+})();
+</script>
