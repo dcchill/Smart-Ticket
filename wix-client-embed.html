@@ -9,24 +9,28 @@
   const API_BASE = "https://tickets.yourdomain.com";
   const root = document.getElementById("smartticket-wix-client");
   const state = { departments: [], devices: [], settings: {} };
-  const clientFields = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "title", "description"];
+  const clientFields = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "attemptedFixes", "title", "description"];
 
   root.innerHTML = `
     <style>
-      .st-wrap{font-family:Inter,Arial,sans-serif;color:#17212b;background:#f5f7fa;padding:18px;border-radius:8px}
-      .st-panel{background:#fff;border:1px solid #dce4eb;border-radius:8px;padding:18px;margin-bottom:16px}
+      .st-wrap{font-family:Inter,Arial,sans-serif;color:#12161f;background:linear-gradient(90deg,rgba(18,22,31,.045) 1px,transparent 1px),linear-gradient(0deg,rgba(18,22,31,.045) 1px,transparent 1px),linear-gradient(135deg,#f6f5ee 0%,#edf5f2 52%,#f9eee8 100%);background-size:38px 38px,38px 38px,auto;padding:18px;border-radius:8px}
+      .st-panel{background:rgba(255,255,255,.88);border:1px solid rgba(217,221,214,.92);border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 12px 32px rgba(18,22,31,.09)}
+      .st-panel:first-of-type{border-top:4px solid #007b83}
+      .st-panel h2{margin-top:0;margin-bottom:10px;line-height:1.05}
+      .st-panel p{color:#667085;line-height:1.45}
       .st-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-      .st-field{display:block}.st-field span{display:block;color:#65727f;font-size:13px;font-weight:800;margin-bottom:6px}
-      .st-field input,.st-field select,.st-field textarea{width:100%;min-height:42px;border:1px solid #dce4eb;border-radius:8px;padding:10px;box-sizing:border-box}
+      .st-field{display:block}.st-field span{display:block;color:#667085;font-size:12px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;margin-bottom:7px}
+      .st-field input,.st-field select,.st-field textarea{width:100%;min-height:42px;border:1px solid #d9ddd6;border-radius:8px;padding:10px 12px;box-sizing:border-box;background:rgba(255,255,255,.94);color:#12161f;outline:none}
+      .st-field input:focus,.st-field select:focus,.st-field textarea:focus{border-color:#007b83;box-shadow:0 0 0 4px rgba(0,123,131,.13);background:#fff}
       .st-field textarea{min-height:120px}.st-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
-      .st-btn{border:0;border-radius:8px;min-height:42px;padding:0 16px;font-weight:800;cursor:pointer}
-      .st-primary{background:#2368d8;color:#fff}.st-secondary{background:#e8edf2;color:#17212b}
-      .st-notice{margin-top:12px;color:#65727f}.st-success{color:#268052}.st-error{color:#bd3c3c}
-      .st-row{border:1px solid #dce4eb;border-radius:8px;padding:10px;margin-top:8px}
-      .st-help{display:block;margin-top:6px;color:#65727f;line-height:1.35}
-      .st-files{display:grid;gap:6px;margin-top:8px;color:#65727f}
-      .st-files div{display:flex;justify-content:space-between;gap:12px;border:1px solid #dce4eb;border-radius:8px;padding:8px 10px;background:#fff}
-      .st-confirm{display:grid;gap:8px}.st-confirm p{margin:0;color:#65727f}.st-confirm button{justify-self:start}
+      .st-btn{border:1px solid transparent;border-radius:8px;min-height:42px;padding:0 16px;font-weight:850;cursor:pointer}
+      .st-primary{background:linear-gradient(135deg,#12161f,#27435b);color:#fff;box-shadow:0 12px 26px rgba(18,22,31,.16)}.st-secondary{background:#fff;color:#12161f;border-color:#d9ddd6}
+      .st-notice{margin-top:12px;color:#667085}.st-success{color:#1d7a4d}.st-error{color:#bb3535}
+      .st-row{border:1px solid #d9ddd6;border-radius:8px;padding:11px;margin-top:8px;background:rgba(255,255,255,.72)}
+      .st-help{display:block;margin-top:6px;color:#667085;line-height:1.35}
+      .st-files{display:grid;gap:6px;margin-top:8px;color:#667085}
+      .st-files div{display:flex;justify-content:space-between;gap:12px;border:1px solid #d9ddd6;border-radius:8px;padding:8px 10px;background:rgba(255,255,255,.78)}
+      .st-confirm{display:grid;gap:8px}.st-confirm p{margin:0;color:#667085}.st-confirm button{justify-self:start}
       .st-btn:disabled,.st-field input:disabled,.st-field select:disabled,.st-field textarea:disabled{cursor:not-allowed;opacity:.72}
       @media(max-width:680px){.st-grid{grid-template-columns:1fr}}
     </style>
@@ -45,6 +49,7 @@
           </div>
           ${field("title","Issue summary",'<input name="title" placeholder="Cannot connect to Wi-Fi">')}
           ${field("description","Description",'<textarea name="description" placeholder="Describe symptoms, error messages, timing, and what changed recently."></textarea><small class="st-help">Include any error messages, when it started, and what you already tried.</small>')}
+          ${field("attemptedFixes","Attempted fixes",'<textarea name="attemptedFixes" placeholder="Example: restarted the laptop, reconnected to Wi-Fi, tried another browser"></textarea><small class="st-help">List anything already tried so IT can skip repeat steps.</small>')}
           <label class="st-field"><span>Attachments</span><input name="attachments" id="stAttachments" type="file" multiple><small class="st-help">Optional. You can attach screenshots or documents up to 10 MB each.</small></label>
           <div class="st-files" id="stFileList" aria-live="polite"></div>
           <div class="st-actions"><button class="st-btn st-secondary" type="reset">Clear</button><button class="st-btn st-primary" id="stSubmitButton" type="submit">Submit ticket</button></div>
@@ -82,16 +87,18 @@
 
   document.getElementById("stTicketForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const notice = document.getElementById("stNotice");
     const submitButton = document.getElementById("stSubmitButton");
     const originalText = submitButton.textContent;
     try {
       if (!validateSelectedFiles()) return;
+      const formData = new FormData(form);
       setSubmitting(true);
-      const response = await fetch(`${API_BASE}/api/tickets`, { method: "POST", body: new FormData(event.currentTarget) });
+      const response = await fetch(`${API_BASE}/api/tickets`, { method: "POST", body: formData });
       const ticket = await response.json();
       if (!response.ok) throw new Error(ticket.error || "Request failed");
-      event.currentTarget.reset();
+      form.reset();
       renderSelectedFiles();
       await init();
       notice.className = "st-notice st-success";

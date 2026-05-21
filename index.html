@@ -21,6 +21,7 @@
           <button class="nav-item" type="button" data-view="settings">Email and Settings</button>
         </nav>
         <a class="client-link" href="/client">Open client portal</a>
+        <a class="client-link" href="/admin-logout">Sign out</a>
       </aside>
 
       <main class="main">
@@ -51,6 +52,7 @@
             <label><span>Search</span><input id="searchInput" type="search" placeholder="Ticket, requester, asset, text" /></label>
             <label><span>Status</span><select id="statusFilter"></select></label>
             <label><span>Priority</span><select id="priorityFilter"></select></label>
+            <label><span>Smart tag</span><select id="tagFilter"></select></label>
           </div>
           <div class="content-grid">
             <section class="ticket-list" id="ticketList" aria-label="Tickets"></section>
@@ -98,7 +100,7 @@
         <section class="view" id="settingsView">
           <section class="panel">
             <h2>Email and Settings</h2>
-            <p class="muted">Configure portal wording, ticket defaults, SLA targets, and email notifications. SMTP credentials are read from environment variables.</p>
+            <p class="muted">Configure portal wording, ticket defaults, SLA targets, and email delivery.</p>
             <form class="stack-form" id="settingsForm">
               <div class="form-grid">
                 <label><span>Portal name</span><input name="portalName" placeholder="SmartTicket" /></label>
@@ -112,6 +114,7 @@
                 </label>
                 <label><span>Ticket prefix</span><input name="ticketPrefix" maxlength="12" placeholder="TKT" /></label>
                 <label><span>Default assignee</span><input name="defaultAssignee" placeholder="IT Operations" /></label>
+                <label><span>Admin password</span><input name="adminPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password" /></label>
                 <label>
                   <span>Default status</span>
                   <select name="defaultStatus">
@@ -132,12 +135,29 @@
                 <textarea name="impactOptions" placeholder="Single user&#10;Team blocked&#10;Business critical"></textarea>
               </label>
               <label>
+                <span>Smart tag rules</span>
+                <textarea name="smartTagRules" placeholder="wifi: wifi, wi-fi, wireless, internet&#10;printer: printer, printing, scanner"></textarea>
+                <small class="help-text">Use one rule per line: tag: keyword, keyword, phrase.</small>
+              </label>
+              <label>
                 <span>Allowed client origins</span>
                 <textarea name="allowedOrigins" placeholder="https://www.yourwixsite.com&#10;https://www.yourdomain.com"></textarea>
               </label>
-              <label><span>Admin notification emails</span><input name="adminEmails" placeholder="admin@example.com, helpdesk@example.com" /></label>
-              <label class="checkbox-row"><input name="notifyAdmins" type="checkbox" /> Email admins when tickets are opened</label>
+              <label><span>IT notification emails</span><input name="adminEmails" placeholder="it@example.com, helpdesk@example.com" /></label>
+              <label class="checkbox-row"><input name="notifyAdmins" type="checkbox" /> Email IT when tickets are opened</label>
               <label class="checkbox-row"><input name="notifyRequesters" type="checkbox" /> Email users when tickets are opened or updated</label>
+              <div class="settings-block">
+                <h3>Email Delivery</h3>
+                <p class="muted">Save SMTP details here to send real emails. Leave password blank to keep the current saved password.</p>
+                <div class="form-grid">
+                  <label><span>SMTP host</span><input name="smtpHost" placeholder="smtp.gmail.com" /></label>
+                  <label><span>SMTP port</span><input name="smtpPort" type="number" min="1" max="65535" placeholder="465" /></label>
+                  <label><span>SMTP username</span><input name="smtpUser" placeholder="helpdesk@example.com" /></label>
+                  <label><span>SMTP password</span><input name="smtpPass" type="password" autocomplete="new-password" placeholder="App password" /></label>
+                  <label><span>From email</span><input name="smtpFrom" placeholder="helpdesk@example.com" /></label>
+                  <label class="checkbox-row"><input name="smtpSecure" type="checkbox" /> Use secure SMTP/TLS</label>
+                </div>
+              </div>
               <div class="settings-block">
                 <h3>Client Form Fields</h3>
                 <p class="muted">Choose which fields appear on the client portal and which visible fields must be completed.</p>
@@ -149,11 +169,15 @@
                   <div class="field-setting"><span>Device or app</span><input name="field_deviceId_enabled" type="checkbox" /><input name="field_deviceId_required" type="checkbox" /></div>
                   <div class="field-setting"><span>Impact</span><input name="field_impact_enabled" type="checkbox" /><input name="field_impact_required" type="checkbox" /></div>
                   <div class="field-setting"><span>Phone</span><input name="field_phone_enabled" type="checkbox" /><input name="field_phone_required" type="checkbox" /></div>
+                  <div class="field-setting"><span>Attempted fixes</span><input name="field_attemptedFixes_enabled" type="checkbox" /><input name="field_attemptedFixes_required" type="checkbox" /></div>
                   <div class="field-setting"><span>Issue summary</span><input name="field_title_enabled" type="checkbox" /><input name="field_title_required" type="checkbox" /></div>
                   <div class="field-setting"><span>Description</span><input name="field_description_enabled" type="checkbox" /><input name="field_description_required" type="checkbox" /></div>
                 </div>
               </div>
-              <button class="primary-action" type="submit">Save settings</button>
+              <div class="form-actions">
+                <button class="secondary-action" type="button" id="testEmailButton">Send test email</button>
+                <button class="primary-action" type="submit">Save settings</button>
+              </div>
             </form>
             <div class="notice" id="emailStatus"></div>
           </section>

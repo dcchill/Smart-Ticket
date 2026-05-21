@@ -9,7 +9,7 @@ const state = {
 
 const statuses = ["Open", "In Progress", "Waiting", "Resolved"];
 const priorities = ["Critical", "High", "Medium", "Low"];
-const clientFields = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "title", "description"];
+const clientFields = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "attemptedFixes", "title", "description"];
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (document.body.dataset.app === "client") {
@@ -23,13 +23,16 @@ async function initAdmin() {
   bindAdminNav();
   fillSelect(document.querySelector("#statusFilter"), ["all", ...statuses]);
   fillSelect(document.querySelector("#priorityFilter"), ["all", ...priorities]);
+  fillSelect(document.querySelector("#tagFilter"), ["all"]);
   document.querySelector("#searchInput").addEventListener("input", renderTickets);
   document.querySelector("#statusFilter").addEventListener("change", renderTickets);
   document.querySelector("#priorityFilter").addEventListener("change", renderTickets);
+  document.querySelector("#tagFilter").addEventListener("change", renderTickets);
   document.querySelector("#departmentForm").addEventListener("submit", createDepartment);
   document.querySelector("#deviceForm").addEventListener("submit", createDevice);
   document.querySelector("#knowledgeForm").addEventListener("submit", createKnowledge);
   document.querySelector("#settingsForm").addEventListener("submit", saveSettings);
+  document.querySelector("#testEmailButton").addEventListener("click", sendTestEmail);
   await refreshData();
 }
 
@@ -66,6 +69,7 @@ async function refreshData() {
 
 function renderAdmin() {
   applyUnitLabels();
+  renderTagFilter();
   renderMetrics();
   renderDashboard();
   renderTickets();
@@ -122,6 +126,13 @@ function renderTickets() {
     updateTicket(ticket.id, { note });
     event.currentTarget.reset();
   });
+  detail.querySelector("#internalNoteForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const internalNote = new FormData(event.currentTarget).get("internalNote");
+    updateTicket(ticket.id, { internalNote });
+    event.currentTarget.reset();
+  });
+  detail.querySelector("#deleteTicketButton").addEventListener("click", () => deleteTicket(ticket.id));
 }
 
 function ticketCard(ticket) {
@@ -138,6 +149,7 @@ function ticketCard(ticket) {
         <span class="pill ${compact(ticket.status)}">${ticket.status}</span>
         <span class="pill ${ticket.slaState}">${ticket.slaState}</span>
         <span class="pill">${ticket.assignee}</span>
+        ${smartTagPills(ticket.smartTags)}
       </div>
     </button>`;
 }
@@ -154,6 +166,10 @@ function ticketDetail(ticket) {
       <span class="pill ${ticket.priority}">${ticket.priority}</span>
     </div>
     <div class="detail-section">
+      <h3>Smart tags</h3>
+      ${smartTagPills(ticket.smartTags) || `<p class="muted">No smart tags detected.</p>`}
+    </div>
+    <div class="detail-section">
       <div class="form-grid">
         <label><span>Status</span><select data-update-field="status">${optionList(statuses, ticket.status)}</select></label>
         <label><span>Priority</span><select data-update-field="priority">${optionList(priorities, ticket.priority)}</select></label>
@@ -167,19 +183,36 @@ function ticketDetail(ticket) {
       <p>Requester email: ${escapeHtml(ticket.requesterEmail)}. SLA target: ${ticket.slaHours} hours.</p>
     </div>
     <div class="detail-section">
+      <h3>Attempted fixes</h3>
+      ${attemptedFixList(ticket.attemptedFixes)}
+    </div>
+    <div class="detail-section">
       <h3>Attachments</h3>
       ${attachmentList(ticket.attachments)}
     </div>
     <div class="detail-section">
-      <h3>Add update</h3>
+      <h3>Requester update</h3>
       <form class="stack-form" id="noteForm">
-        <textarea name="note" placeholder="Add a note for the ticket history and requester email."></textarea>
-        <button class="primary-action" type="submit">Post update</button>
+        <textarea name="note" placeholder="Post an update to the ticket history and requester email."></textarea>
+        <button class="primary-action" type="submit">Email update</button>
       </form>
+    </div>
+    <div class="detail-section">
+      <h3>Internal notes</h3>
+      <form class="stack-form" id="internalNoteForm">
+        <textarea name="internalNote" placeholder="Private note for IT only. This will not email the requester."></textarea>
+        <button class="secondary-action" type="submit">Save internal note</button>
+      </form>
+      ${internalNoteList(ticket.internalNotes)}
     </div>
     <div class="detail-section">
       <h3>Status history</h3>
       <ol class="activity timeline">${ticket.activity.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+    </div>
+    <div class="detail-section danger-zone">
+      <h3>Remove ticket</h3>
+      <p class="muted">Delete this ticket and its uploaded attachments permanently.</p>
+      <button class="danger-action" type="button" id="deleteTicketButton">Delete ticket</button>
     </div>`;
 }
 
@@ -198,7 +231,8 @@ function renderDashboard() {
     <article class="insight-card"><span>Overdue</span><strong>${overdue}</strong></article>
     <article class="insight-card"><span>Avg resolution</span><strong>${avgHours}h</strong></article>
     <article class="insight-card"><span>Attachments</span><strong>${tickets.reduce((sum, ticket) => sum + (ticket.attachments?.length || 0), 0)}</strong></article>
-    <article class="insight-card">${barList("Top devices/apps", countBy(tickets, "device"))}</article>
+    <article class="insight-card wide-card">${deviceHealthBoard(tickets)}</article>
+    <article class="insight-card">${barList("Top smart tags", countTags(tickets))}</article>
     <article class="insight-card">${barList("Common statuses", countBy(tickets, "status"))}</article>
     <article class="insight-card">${barList("Busy assignees", countBy(tickets, "assignee"))}</article>
     <article class="insight-card">${barList("Frequent keywords", keywordCounts(tickets))}</article>
@@ -238,16 +272,24 @@ function renderSettings() {
   form.unitType.value = state.settings.unitType ?? "departments";
   form.ticketPrefix.value = state.settings.ticketPrefix ?? "TKT";
   form.defaultAssignee.value = state.settings.defaultAssignee ?? "IT Operations";
+  form.adminPassword.value = "";
   form.defaultStatus.value = state.settings.defaultStatus ?? "Open";
   form.slaCritical.value = state.settings.slaHours?.Critical ?? 4;
   form.slaHigh.value = state.settings.slaHours?.High ?? 8;
   form.slaMedium.value = state.settings.slaHours?.Medium ?? 24;
   form.slaLow.value = state.settings.slaHours?.Low ?? 72;
   form.impactOptions.value = impactOptions().join("\n");
+  form.smartTagRules.value = smartTagRulesText();
   form.allowedOrigins.value = state.settings.allowedOrigins?.join("\n") ?? "";
   form.adminEmails.value = state.settings.adminEmails?.join(", ") ?? "";
   form.notifyAdmins.checked = Boolean(state.settings.notifyAdmins);
   form.notifyRequesters.checked = Boolean(state.settings.notifyRequesters);
+  form.smtpHost.value = state.settings.smtp?.host ?? "";
+  form.smtpPort.value = state.settings.smtp?.port ?? 465;
+  form.smtpUser.value = state.settings.smtp?.user ?? "";
+  form.smtpPass.value = "";
+  form.smtpFrom.value = state.settings.smtp?.from ?? "";
+  form.smtpSecure.checked = state.settings.smtp?.secure !== false;
   clientFields.forEach((field) => {
     const config = fieldConfig(field);
     const enabled = form.elements[`field_${field}_enabled`];
@@ -279,17 +321,18 @@ function renderClientCatalog() {
 
 async function submitClientTicket(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   const notice = document.querySelector("#clientNotice");
   const submitButton = document.querySelector("#clientSubmitButton");
   const originalText = submitButton?.textContent || "Submit ticket";
   try {
     if (!validateSelectedFiles()) return;
+    const formData = new FormData(form);
     setClientSubmitting(true);
-    const formData = new FormData(event.currentTarget);
     const response = await fetch("/api/tickets", { method: "POST", body: formData });
     const ticket = await response.json();
     if (!response.ok) throw new Error(ticket.error ?? "Request failed");
-    event.currentTarget.reset();
+    form.reset();
     renderSelectedFiles();
     renderClientCatalog();
     notice.className = "notice success";
@@ -354,8 +397,24 @@ async function saveSettings(event) {
   await refreshData();
 }
 
+async function sendTestEmail() {
+  try {
+    const result = await api("/api/test-email", { method: "POST", body: {} });
+    setNotice("#emailStatus", result.message, "success");
+  } catch (error) {
+    setNotice("#emailStatus", error.message, "error");
+  }
+}
+
 async function updateTicket(id, patch) {
   await api(`/api/tickets/${id}`, { method: "PUT", body: patch });
+  await refreshData();
+}
+
+async function deleteTicket(id) {
+  if (!window.confirm(`Delete ticket ${id}? This cannot be undone.`)) return;
+  await api(`/api/tickets/${id}`, { method: "DELETE" });
+  state.selectedTicketId = null;
   await refreshData();
 }
 
@@ -390,10 +449,22 @@ function filteredTickets() {
   const query = document.querySelector("#searchInput").value.trim().toLowerCase();
   const status = document.querySelector("#statusFilter").value;
   const priority = document.querySelector("#priorityFilter").value;
+  const tag = document.querySelector("#tagFilter").value;
   return state.tickets.filter((ticket) => {
-    const haystack = `${ticket.id} ${ticket.title} ${ticket.description} ${ticket.requester} ${ticket.requesterEmail} ${ticket.department} ${ticket.device}`.toLowerCase();
-    return (!query || haystack.includes(query)) && (status === "all" || ticket.status === status) && (priority === "all" || ticket.priority === priority);
+    const haystack = `${ticket.id} ${ticket.title} ${ticket.description} ${(ticket.attemptedFixes || []).join(" ")} ${(ticket.smartTags || []).join(" ")} ${ticket.requester} ${ticket.requesterEmail} ${ticket.department} ${ticket.device}`.toLowerCase();
+    return (!query || haystack.includes(query))
+      && (status === "all" || ticket.status === status)
+      && (priority === "all" || ticket.priority === priority)
+      && (tag === "all" || (ticket.smartTags || []).includes(tag));
   });
+}
+function renderTagFilter() {
+  const filter = document.querySelector("#tagFilter");
+  if (!filter) return;
+  const selected = filter.value || "all";
+  const tags = [...new Set(state.tickets.flatMap((ticket) => ticket.smartTags || []))].sort();
+  fillSelect(filter, ["all", ...tags.map((tag) => [tag, tag])]);
+  filter.value = tags.includes(selected) ? selected : "all";
 }
 
 function row(title, id, kind, subtitle = "") {
@@ -510,6 +581,7 @@ function defaultClientFields() {
     deviceId: { enabled: true, required: true },
     impact: { enabled: true, required: true },
     phone: { enabled: true, required: false },
+    attemptedFixes: { enabled: true, required: false },
     title: { enabled: true, required: true },
     description: { enabled: true, required: true },
   };
@@ -520,7 +592,11 @@ function impactOptions() {
     ? state.settings.impactOptions
     : ["Single user", "Team blocked", "Business critical"];
 }
-
+function smartTagRulesText() {
+  return Array.isArray(state.settings.smartTagRules)
+    ? state.settings.smartTagRules.map((rule) => `${rule.tag}: ${(rule.keywords || []).join(", ")}`).join("\n")
+    : "";
+}
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method ?? "GET",
@@ -547,12 +623,59 @@ function attachmentList(attachments = []) {
   if (!attachments.length) return `<p class="muted">No attachments.</p>`;
   return `<div class="attachment-list">${attachments.map((file) => `<a href="${escapeAttr(file.url)}" target="_blank" rel="noreferrer">${escapeHtml(file.originalName)}</a>`).join("")}</div>`;
 }
+function attemptedFixList(fixes = []) {
+  if (!fixes.length) return `<p class="muted">No attempted fixes reported.</p>`;
+  return `<div class="tag-row attempted-fix-list">${fixes.map((fix) => `<span class="pill">${escapeHtml(fix)}</span>`).join("")}</div>`;
+}
+function smartTagPills(tags = []) {
+  return tags.map((tag) => `<span class="pill smart-tag">${escapeHtml(tag)}</span>`).join("");
+}
+function internalNoteList(notes = []) {
+  if (!notes.length) return `<p class="muted">No internal notes yet.</p>`;
+  return `<ol class="activity internal-notes">${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ol>`;
+}
 function countBy(items, field) {
   return items.reduce((counts, item) => {
     const key = item[field] || "Unassigned";
     counts[key] = (counts[key] || 0) + 1;
     return counts;
   }, {});
+}
+function countTags(tickets) {
+  return tickets.reduce((counts, ticket) => {
+    (ticket.smartTags || ["untagged"]).forEach((tag) => {
+      counts[tag] = (counts[tag] || 0) + 1;
+    });
+    return counts;
+  }, {});
+}
+function deviceHealthBoard(tickets) {
+  const rows = Object.values(tickets.reduce((devices, ticket) => {
+    const key = ticket.smartTags?.[0] || ticket.device || "General IT request";
+    const row = devices[key] ||= { name: key, open: 0, total: 0, urgent: 0, overdue: 0, lastUpdated: "" };
+    row.total += 1;
+    if (ticket.status !== "Resolved") row.open += 1;
+    if (["Critical", "High"].includes(ticket.priority)) row.urgent += 1;
+    if (ticket.slaState === "Overdue") row.overdue += 1;
+    if (!row.lastUpdated || new Date(ticket.updatedAt) > new Date(row.lastUpdated)) row.lastUpdated = ticket.updatedAt;
+    return devices;
+  }, {}))
+    .sort((a, b) => (b.open * 3 + b.urgent * 2 + b.overdue * 4 + b.total) - (a.open * 3 + a.urgent * 2 + a.overdue * 4 + a.total))
+    .slice(0, 6);
+
+  if (!rows.length) return `<h3>Device/app health</h3><p class="muted">No ticket history yet.</p>`;
+  return `
+    <h3>Device/app health</h3>
+    <div class="health-board">
+      ${rows.map((row) => `
+        <div class="health-row">
+          <strong>${escapeHtml(row.name)}</strong>
+          <span><b>${row.open}</b> open</span>
+          <span><b>${row.urgent}</b> urgent</span>
+          <span><b>${row.overdue}</b> overdue</span>
+          <small>${escapeHtml(formatDateTime(row.lastUpdated))}</small>
+        </div>`).join("")}
+    </div>`;
 }
 function keywordCounts(tickets) {
   const stop = new Set(["the", "and", "for", "with", "this", "that", "from", "ticket", "issue", "cannot"]);

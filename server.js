@@ -12,7 +12,7 @@ const UPLOAD_DIR = path.join(ROOT, "uploads");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 const CSV_PATH = path.join(DATA_DIR, "tickets.csv");
 const OUTBOX_PATH = path.join(DATA_DIR, "email-outbox.jsonl");
-const CLIENT_FIELD_NAMES = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "title", "description"];
+const CLIENT_FIELD_NAMES = ["requester", "requesterEmail", "departmentId", "deviceId", "impact", "phone", "attemptedFixes", "title", "description"];
 const DEFAULT_CLIENT_FIELDS = {
   requester: { enabled: true, required: true },
   requesterEmail: { enabled: true, required: true },
@@ -20,10 +20,23 @@ const DEFAULT_CLIENT_FIELDS = {
   deviceId: { enabled: true, required: true },
   impact: { enabled: true, required: true },
   phone: { enabled: true, required: false },
+  attemptedFixes: { enabled: true, required: false },
   title: { enabled: true, required: true },
   description: { enabled: true, required: true },
 };
 const DEFAULT_IMPACT_OPTIONS = ["Single user", "Team blocked", "Business critical"];
+const DEFAULT_SMART_TAG_RULES = [
+  { tag: "wifi", keywords: ["wifi", "wi-fi", "wireless", "wlan", "internet", "network connection", "can't connect", "cannot connect", "connection issue", "connection problem"] },
+  { tag: "vpn", keywords: ["vpn", "remote access", "tunnel", "globalprotect", "anyconnect"] },
+  { tag: "email", keywords: ["email", "e-mail", "mailbox", "outlook", "gmail", "inbox", "calendar"] },
+  { tag: "printer", keywords: ["print", "printer", "scanner", "scan", "copier", "toner", "paper jam", "label printer"] },
+  { tag: "login", keywords: ["login", "log in", "sign in", "signin", "account", "locked out", "lockout", "password", "mfa", "2fa", "authentication"] },
+  { tag: "hardware", keywords: ["laptop", "desktop", "computer", "monitor", "screen", "keyboard", "mouse", "camera", "webcam", "microphone", "speaker", "charger", "battery"] },
+  { tag: "browser", keywords: ["browser", "chrome", "edge", "firefox", "safari", "cache", "cookies", "website", "web site"] },
+  { tag: "software", keywords: ["app", "application", "software", "program", "install", "update", "crash", "freezing", "license"] },
+  { tag: "classroom display", keywords: ["projector", "smartboard", "smart board", "display", "tv", "hdmi", "promethean", "cleartouch"] },
+  { tag: "security", keywords: ["security", "phishing", "malware", "virus", "suspicious", "compromised"] },
+];
 
 const defaults = {
   departments: [
@@ -56,12 +69,16 @@ const defaults = {
     slaHours: { Critical: 4, High: 8, Medium: 24, Low: 72 },
     clientFields: DEFAULT_CLIENT_FIELDS,
     impactOptions: DEFAULT_IMPACT_OPTIONS,
+    smartTagRules: DEFAULT_SMART_TAG_RULES,
+    adminPasswordHash: "",
+    smtp: { host: "", port: 465, user: "", pass: "", from: "", secure: true },
     allowedOrigins: [],
   },
   tickets: [],
 };
 
 let store = loadStore();
+const adminSessions = new Set();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -71,8 +88,11 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.method === "POST" && url.pathname === "/admin-login") return handleAdminLogin(req, res);
+    if (url.pathname === "/admin-logout") return handleAdminLogout(res);
+    if (url.pathname === "/admin" && !isAdminAuthenticated(req)) return serveStatic(req, res, "/admin-login");
     if (url.pathname.startsWith("/api/")) return await routeApi(req, res, url);
-    return serveStatic(res, url.pathname);
+    return serveStatic(req, res, url.pathname);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }
@@ -89,10 +109,7 @@ async function routeApi(req, res, url) {
   const resource = parts[1];
   const id = parts[2];
 
-  if (req.method === "GET" && resource === "tickets" && !id) return sendJson(res, 200, withSla(store.tickets));
   if (req.method === "POST" && resource === "tickets") return createTicket(req, res, await readTicketInput(req));
-  if (req.method === "PUT" && resource === "tickets" && id) return updateTicket(res, id, await readJson(req));
-  if (req.method === "DELETE" && resource === "tickets" && id) return deleteTicket(res, id);
   if (req.method === "GET" && resource === "tickets" && id && parts[3] === "lookup") return lookupTicket(res, id, url.searchParams.get("email"));
   if (req.method === "GET" && resource === "client-options") {
     return sendJson(res, 200, {
@@ -102,14 +119,23 @@ async function routeApi(req, res, url) {
     });
   }
 
+  if (isAdminApi(resource, req.method, id, parts) && !isAdminAuthenticated(req)) {
+    return sendJson(res, 401, { error: "Admin password required." });
+  }
+
+  if (req.method === "GET" && resource === "tickets" && !id) return sendJson(res, 200, withSla(store.tickets));
+  if (req.method === "PUT" && resource === "tickets" && id) return updateTicket(res, id, await readJson(req));
+  if (req.method === "DELETE" && resource === "tickets" && id) return deleteTicket(res, id);
+
   if (["departments", "devices", "knowledge"].includes(resource)) {
     if (req.method === "GET") return sendJson(res, 200, store[resource]);
     if (req.method === "POST") return createCatalogItem(res, resource, await readJson(req));
     if (req.method === "DELETE" && id) return deleteCatalogItem(res, resource, id);
   }
 
-  if (req.method === "GET" && resource === "settings") return sendJson(res, 200, publicSettings());
+  if (req.method === "GET" && resource === "settings") return sendJson(res, 200, adminSettings());
   if (req.method === "PUT" && resource === "settings") return updateSettings(res, await readJson(req));
+  if (req.method === "POST" && resource === "test-email") return sendTestEmail(res);
 
   sendJson(res, 404, { error: "Route not found" });
 }
@@ -136,6 +162,7 @@ function createTicket(req, res, payload) {
     deviceId: normalized.deviceId,
     device: normalized.device,
     impact: normalized.impact,
+    attemptedFixes: normalized.attemptedFixes,
     title: normalized.title,
     description: normalized.description,
     status: store.settings.defaultStatus || "Open",
@@ -143,7 +170,8 @@ function createTicket(req, res, payload) {
     ...triage,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
-    activity: [`${formatDate(now)} - Ticket created by ${normalized.requester}.`, `${formatDate(now)} - Routed to ${triage.assignee} as ${triage.priority}.`],
+    internalNotes: [],
+    activity: [`${formatDate(now)} - Ticket created by ${displayRequester(normalized)}.`, `${formatDate(now)} - Routed to ${triage.assignee} as ${triage.priority}.`],
   };
 
   store.tickets.unshift(ticket);
@@ -188,20 +216,31 @@ function updateTicket(res, id, patch) {
 
   const allowed = ["status", "priority", "assignee", "category"];
   const changes = [];
+  const requesterChanges = [];
   for (const field of allowed) {
     if (patch[field] && patch[field] !== ticket[field]) {
-      changes.push(`${field} changed from ${ticket[field]} to ${patch[field]}`);
+      const change = `${field} changed from ${ticket[field]} to ${patch[field]}`;
+      changes.push(change);
+      requesterChanges.push(change);
       ticket[field] = patch[field];
     }
   }
-  if (patch.note?.trim()) changes.push(`note added: ${patch.note.trim()}`);
-  if (!changes.length) return sendJson(res, 200, withSla([ticket])[0]);
+  if (patch.note?.trim()) {
+    const note = `requester update added: ${patch.note.trim()}`;
+    changes.push(note);
+    requesterChanges.push(note);
+  }
+  if (patch.internalNote?.trim()) {
+    ticket.internalNotes ||= [];
+    ticket.internalNotes.unshift(`${formatDate(new Date())} - ${patch.internalNote.trim()}`);
+  }
+  if (!changes.length && !patch.internalNote?.trim()) return sendJson(res, 200, withSla([ticket])[0]);
 
   const now = new Date();
   ticket.updatedAt = now.toISOString();
-  ticket.activity.unshift(`${formatDate(now)} - ${changes.join("; ")}.`);
+  if (changes.length) ticket.activity.unshift(`${formatDate(now)} - ${changes.join("; ")}.`);
   persist();
-  notifyTicketUpdated(ticket, changes);
+  if (requesterChanges.length) notifyTicketUpdated(ticket, requesterChanges);
   sendJson(res, 200, withSla([ticket])[0]);
 }
 
@@ -245,10 +284,13 @@ function updateSettings(res, input) {
     },
     clientFields: readClientFields(input),
     impactOptions: readImpactOptions(input.impactOptions),
+    smartTagRules: readSmartTagRules(input.smartTagRules),
+    adminPasswordHash: readAdminPasswordHash(input.adminPassword, store.settings.adminPasswordHash),
+    smtp: readSmtpSettings(input, store.settings.smtp),
     allowedOrigins: readAllowedOrigins(input.allowedOrigins),
   };
   persist();
-  sendJson(res, 200, publicSettings());
+  sendJson(res, 200, adminSettings());
 }
 
 function triageTicket(ticket, device) {
@@ -277,13 +319,54 @@ function pickAssignee(text) {
 function notifyTicketOpened(req, ticket) {
   const subject = `${ticket.id} opened: ${ticket.title}`;
   const unitLabel = store.settings.unitType === "classrooms" ? "Classroom" : "Department";
-  const body = `${ticket.requester} opened ${ticket.id}\nPriority: ${ticket.priority}\n${unitLabel}: ${ticket.department}\nDevice: ${ticket.device}\n\n${ticket.description}`;
-  if (store.settings.notifyAdmins) queueEmail(store.settings.adminEmails, subject, body);
+  const attempted = ticket.attemptedFixes?.length ? `\nAttempted fixes: ${ticket.attemptedFixes.join(", ")}` : "";
+  const opener = displayRequester(ticket);
+  const body = `${opener} opened ${ticket.id}\nPriority: ${ticket.priority}\n${unitLabel}: ${ticket.department}\nDevice: ${ticket.device}\nRequester: ${ticket.requesterEmail}\nStatus link: ${clientTicketUrl(req, ticket.id)}${attempted}\n\n${ticket.description}`;
+  if (store.settings.notifyAdmins) queueEmail(itNotificationRecipients(), subject, body);
   if (store.settings.notifyRequesters) queueEmail([ticket.requesterEmail], `Your IT ticket ${ticket.id} was opened`, `We received your ticket.\n\nStatus: ${ticket.status}\nPriority: ${ticket.priority}\nAssigned to: ${ticket.assignee}\nCheck status: ${clientTicketUrl(req, ticket.id)}${supportLine()}`);
+}
+
+function itNotificationRecipients() {
+  const smtp = smtpSettings();
+  const supportEmail = emailFromText(store.settings.supportContact);
+  return [...new Set([
+    ...(store.settings.adminEmails || []),
+    ...(supportEmail ? [supportEmail] : []),
+    ...(smtp.from || smtp.user ? [smtp.from || smtp.user] : []),
+  ].filter(Boolean))];
+}
+
+function emailFromText(value) {
+  return String(value || "").match(/[^\s,;<>]+@[^\s,;<>]+/)?.[0] || "";
 }
 
 function notifyTicketUpdated(ticket, changes) {
   if (store.settings.notifyRequesters) queueEmail([ticket.requesterEmail], `Your IT ticket ${ticket.id} was updated`, `Ticket ${ticket.id} was updated:\n${changes.join("\n")}\n\nCurrent status: ${ticket.status}`);
+}
+
+function displayRequester(ticket) {
+  return ticket.requester && ticket.requester !== "Anonymous requester" ? ticket.requester : ticket.requesterEmail;
+}
+
+async function sendTestEmail(res) {
+  const smtp = smtpSettings();
+  if (!smtp.host) return sendJson(res, 400, { error: "SMTP is not configured. Save Email Delivery settings first." });
+  const recipients = store.settings.adminEmails.length ? store.settings.adminEmails : [smtp.from || smtp.user].filter(Boolean);
+  if (!recipients.length) return sendJson(res, 400, { error: "Add an admin notification email or SMTP from address first." });
+
+  const message = {
+    to: recipients,
+    subject: "SmartTicket test email",
+    text: `SmartTicket email delivery is configured.\n\nSent at: ${new Date().toISOString()}`,
+    at: new Date().toISOString(),
+  };
+  try {
+    await sendSmtp(message, smtp);
+    sendJson(res, 200, { message: `Test email sent to ${recipients.join(", ")}.` });
+  } catch (error) {
+    fs.appendFileSync(OUTBOX_PATH, JSON.stringify({ ...message, sendError: error.message }) + "\n");
+    sendJson(res, 500, { error: `Test email failed: ${error.message}` });
+  }
 }
 
 function queueEmail(to, subject, text) {
@@ -296,20 +379,16 @@ function queueEmail(to, subject, text) {
 }
 
 async function sendEmail(message) {
-  if (!process.env.SMTP_HOST) {
+  const smtp = smtpSettings();
+  if (!smtp.host) {
     fs.appendFileSync(OUTBOX_PATH, JSON.stringify({ ...message, queuedOnly: true }) + "\n");
     return;
   }
-  await sendSmtp(message);
+  await sendSmtp(message, smtp);
 }
 
-function sendSmtp(message) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 465);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM || user;
-  const secure = process.env.SMTP_SECURE !== "false";
+function sendSmtp(message, smtp) {
+  const { host, port, user, pass, from, secure } = smtp;
   if (!from) throw new Error("SMTP_FROM or SMTP_USER is required");
 
   return new Promise((resolve, reject) => {
@@ -358,7 +437,7 @@ function sendSmtp(message) {
 }
 
 function withSla(tickets) {
-  return tickets.map((ticket) => ({ ...ticket, slaState: slaState(ticket) }));
+  return tickets.map((ticket) => ({ ...ticket, slaState: slaState(ticket), smartTags: smartTags(ticket) }));
 }
 function slaState(ticket) {
   if (ticket.status === "Resolved") return "Resolved";
@@ -386,6 +465,9 @@ function loadStore() {
       ...(saved.settings || {}),
       clientFields: { ...DEFAULT_CLIENT_FIELDS, ...((saved.settings || {}).clientFields || {}) },
       impactOptions: readImpactOptions((saved.settings || {}).impactOptions),
+      smartTagRules: readSmartTagRules((saved.settings || {}).smartTagRules),
+      adminPasswordHash: (saved.settings || {}).adminPasswordHash || "",
+      smtp: { ...defaults.settings.smtp, ...((saved.settings || {}).smtp || {}) },
       allowedOrigins: readAllowedOrigins((saved.settings || {}).allowedOrigins),
     },
   };
@@ -395,8 +477,11 @@ function persist() {
   writeCsv(store.tickets);
 }
 function writeCsv(tickets) {
-  const headers = ["id", "createdAt", "updatedAt", "status", "priority", "requester", "requesterEmail", "department", "device", "title", "assignee", "category", "description", "attachments"];
-  const rows = [headers.join(","), ...tickets.map((ticket) => headers.map((field) => csv(ticket[field])).join(","))];
+  const headers = ["id", "createdAt", "updatedAt", "status", "priority", "requester", "requesterEmail", "department", "device", "title", "assignee", "category", "description", "attemptedFixes", "smartTags", "attachments"];
+  const rows = [headers.join(","), ...tickets.map((ticket) => {
+    const exportTicket = { ...ticket, smartTags: smartTags(ticket) };
+    return headers.map((field) => csv(exportTicket[field])).join(",");
+  })];
   fs.writeFileSync(CSV_PATH, rows.join("\n"));
 }
 function csv(value) {
@@ -404,7 +489,21 @@ function csv(value) {
   return `"${String(normalized ?? "").replaceAll('"', '""')}"`;
 }
 function splitCsv(value) { return String(value).split(",").map((item) => item.trim()).filter(Boolean); }
-function publicSettings() { return { ...store.settings, smtpConfigured: Boolean(process.env.SMTP_HOST) }; }
+function adminSettings() {
+  const smtp = smtpSettings();
+  return {
+    ...store.settings,
+    adminPasswordHash: "",
+    adminPasswordSet: Boolean(store.settings.adminPasswordHash || process.env.ADMIN_PASSWORD),
+    smtp: { ...store.settings.smtp, pass: store.settings.smtp?.pass ? "" : "" },
+    smtpConfigured: Boolean(smtp.host),
+    smtpUsingEnvironment: Boolean(process.env.SMTP_HOST),
+  };
+}
+function publicSettings() {
+  const { smtp, adminPasswordHash, ...settings } = store.settings;
+  return settings;
+}
 function sanitizePrefix(value) {
   const prefix = String(value || defaults.settings.ticketPrefix).trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
   return prefix || defaults.settings.ticketPrefix;
@@ -424,9 +523,121 @@ function readImpactOptions(value) {
     .filter(Boolean);
   return [...new Set(options)].slice(0, 20).length ? [...new Set(options)].slice(0, 20) : DEFAULT_IMPACT_OPTIONS;
 }
+function readSmartTagRules(value) {
+  const raw = Array.isArray(value)
+    ? value.map((rule) => `${rule.tag}: ${(rule.keywords || []).join(", ")}`).join("\n")
+    : String(value || "");
+  const rules = raw
+    .split(/\r?\n/)
+    .map((line) => {
+      const [tagPart, keywordsPart] = line.split(":");
+      const tag = String(tagPart || "").trim().toLowerCase();
+      const keywords = String(keywordsPart || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return tag && keywords.length ? { tag, keywords } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 50);
+  return rules.length ? mergeSmartTagRules(rules) : structuredClone(DEFAULT_SMART_TAG_RULES);
+}
+function mergeSmartTagRules(rules) {
+  const merged = new Map();
+  for (const rule of rules) {
+    const existing = merged.get(rule.tag) || [];
+    merged.set(rule.tag, [...new Set([...existing, ...rule.keywords])]);
+  }
+  return [...merged.entries()].map(([tag, keywords]) => ({ tag, keywords: keywords.slice(0, 40) }));
+}
 function readAllowedOrigins(value) {
   const raw = Array.isArray(value) ? value.join("\n") : String(value || "");
   return [...new Set(raw.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean))].slice(0, 20);
+}
+function readAdminPasswordHash(value, currentHash = "") {
+  const password = String(value || "").trim();
+  return password ? hashPassword(password) : currentHash;
+}
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(String(password)).digest("hex");
+}
+function adminPasswordMatches(password) {
+  if (process.env.ADMIN_PASSWORD) return password === process.env.ADMIN_PASSWORD;
+  if (store.settings.adminPasswordHash) return hashPassword(password) === store.settings.adminPasswordHash;
+  return password === "admin";
+}
+function isAdminAuthenticated(req) {
+  const token = parseCookies(req.headers.cookie || "").st_admin;
+  return Boolean(token && adminSessions.has(token));
+}
+function parseCookies(cookieHeader) {
+  return String(cookieHeader || "").split(";").reduce((cookies, part) => {
+    const [name, ...rest] = part.trim().split("=");
+    if (name) cookies[name] = decodeURIComponent(rest.join("="));
+    return cookies;
+  }, {});
+}
+async function handleAdminLogin(req, res) {
+  const input = await readForm(req);
+  if (!adminPasswordMatches(input.password || "")) {
+    res.writeHead(302, { Location: "/admin-login?error=1" });
+    return res.end();
+  }
+  const token = crypto.randomUUID();
+  adminSessions.add(token);
+  res.writeHead(302, {
+    Location: "/admin",
+    "Set-Cookie": `st_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800`,
+  });
+  res.end();
+}
+function handleAdminLogout(res) {
+  res.writeHead(302, {
+    Location: "/admin-login",
+    "Set-Cookie": "st_admin=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
+  });
+  res.end();
+}
+function isAdminApi(resource, method, id, parts) {
+  if (resource === "client-options") return false;
+  if (resource === "tickets" && method === "POST") return false;
+  if (resource === "tickets" && method === "GET" && id && parts[3] === "lookup") return false;
+  return true;
+}
+async function readForm(req) {
+  const body = (await readBuffer(req)).toString("utf8");
+  return Object.fromEntries(new URLSearchParams(body).entries());
+}
+function readSmtpSettings(input, current = {}) {
+  const host = String(input.smtpHost || "").trim();
+  const user = String(input.smtpUser || "").trim();
+  const from = String(input.smtpFrom || "").trim();
+  const passInput = String(input.smtpPass || "");
+  return {
+    host,
+    port: cleanPort(input.smtpPort, 465),
+    user,
+    pass: passInput ? passInput : (current.pass || ""),
+    from,
+    secure: Boolean(input.smtpSecure),
+  };
+}
+function smtpSettings() {
+  const saved = store.settings.smtp || {};
+  const host = process.env.SMTP_HOST || saved.host || "";
+  const user = process.env.SMTP_USER || saved.user || "";
+  return {
+    host,
+    port: Number(process.env.SMTP_PORT || saved.port || 465),
+    user,
+    pass: process.env.SMTP_PASS || saved.pass || "",
+    from: process.env.SMTP_FROM || saved.from || user,
+    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE !== "false" : saved.secure !== false,
+  };
+}
+function cleanPort(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 && number <= 65535 ? number : fallback;
 }
 function applyCors(req, res) {
   const origin = req.headers.origin;
@@ -449,6 +660,23 @@ function impactScore(impact) {
   const index = options.findIndex((option) => option === impact);
   if (index < 0 || options.length <= 1) return 1;
   return Math.round(1 + (index / (options.length - 1)) * 4);
+}
+function smartTags(ticket) {
+  const text = normalizeSearchText([
+    ticket.device,
+    ticket.title,
+    ticket.description,
+    ticket.category,
+    ...(ticket.attemptedFixes || []),
+  ].join(" "));
+  const tags = smartTagRules().filter((rule) => rule.keywords.some((keyword) => text.includes(normalizeSearchText(keyword)))).map((rule) => rule.tag);
+  return tags.length ? [...new Set(tags)] : ["general"];
+}
+function smartTagRules() {
+  return readSmartTagRules(store.settings.smartTagRules);
+}
+function normalizeSearchText(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 function supportLine() {
   return store.settings.supportContact ? `\nSupport contact: ${store.settings.supportContact}` : "";
@@ -485,9 +713,18 @@ function normalizeTicketInput(input, department, device) {
     device: device?.name || "General IT request",
     deviceRecord,
     impact: impacts.includes(input.impact) ? input.impact : impacts[0],
+    attemptedFixes: readAttemptedFixSelections(input.attemptedFixes),
     title: String(input.title || "").trim() || "IT support request",
     description: String(input.description || "").trim() || "No description provided.",
   };
+}
+function readAttemptedFixSelections(value) {
+  const raw = Array.isArray(value) ? value.join("\n") : String(value || "");
+  const selections = raw
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...new Set(selections)].slice(0, 20);
 }
 function requireFields(input, fields) {
   const missing = fields.filter((field) => !String(input[field] ?? "").trim());
@@ -547,12 +784,19 @@ function parseMultipart(body, boundary) {
       const saved = saveAttachment(filename, content);
       if (saved) attachments.push(saved);
     } else if (name) {
-      fields[name] = content.toString("utf8");
+      appendMultipartField(fields, name, content.toString("utf8"));
     }
     start = next;
   }
 
   return { fields, attachments };
+}
+function appendMultipartField(fields, name, value) {
+  if (Object.prototype.hasOwnProperty.call(fields, name)) {
+    fields[name] = Array.isArray(fields[name]) ? [...fields[name], value] : [fields[name], value];
+  } else {
+    fields[name] = value;
+  }
 }
 function saveAttachment(filename, content) {
   if (!filename || !content.length) return null;
@@ -572,8 +816,12 @@ function sendJson(res, status, data) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
 }
-function serveStatic(res, pathname) {
-  const routes = { "/": "index.html", "/admin": "index.html", "/client": "client.html" };
+function serveStatic(req, res, pathname) {
+  if ((pathname === "/data/tickets.csv" || pathname === "/data/store.json" || pathname === "/data/email-outbox.jsonl") && !isAdminAuthenticated(req)) {
+    res.writeHead(302, { Location: "/admin-login" });
+    return res.end();
+  }
+  const routes = { "/": "client.html", "/admin": "index.html", "/admin-login": "admin-login.html", "/client": "client.html" };
   const file = routes[pathname] || pathname.slice(1);
   const fullPath = path.normalize(path.join(ROOT, file));
   if (!fullPath.startsWith(ROOT) || !fs.existsSync(fullPath)) {

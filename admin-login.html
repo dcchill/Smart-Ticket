@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SmartTicket Admin Login</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-app="login">
+    <main class="login-page">
+      <section class="login-panel panel">
+        <a class="brand login-brand" href="/">
+          <span class="brand-mark">ST</span>
+          <span><strong>SmartTicket</strong><small>Admin access</small></span>
+        </a>
+        <h1>Admin sign in</h1>
+        <p class="muted">Enter the admin password to manage tickets and settings.</p>
+        <form class="stack-form" method="post" action="/admin-login">
+          <label><span>Password</span><input name="password" type="password" required autofocus /></label>
+          <button class="primary-action" type="submit">Sign in</button>
+        </form>
+        <p class="notice error login-error">Incorrect password.</p>
+        <a class="muted back-link" href="/">Return to client portal</a>
+      </section>
+    </main>
+    <script>
+      if (!new URLSearchParams(window.location.search).has("error")) {
+        document.querySelector(".login-error").hidden = true;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+# Local runtime data and personal settings
+data/store.json
+data/tickets.csv
+data/email-outbox.jsonl
+uploads/
+
+# Logs
+*.log
+server.err.log
+server.out.log
+
+# Local secrets and environment files
+.env
+.env.*
+*.local
+
+# Dependencies and generated caches
+node_modules/
+__pycache__/
+.DS_Store
+Thumbs.db
