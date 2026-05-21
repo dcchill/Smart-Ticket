@@ -1,2 +1,0 @@
-id,createdAt,updatedAt,status,priority,requester,requesterEmail,department,device,title,assignee,category,description,attachments
-"TKT-2026-4891","2026-05-20T14:22:40.309Z","2026-05-20T14:34:50.277Z","Resolved","Low","Test User","test@example.com","Engineering","VPN","VPN failed for test","Network Support","VPN connection failure","VPN cannot connect and shows an MFA tunnel error.",""
