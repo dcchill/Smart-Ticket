@@ -39,10 +39,7 @@ async function initAdmin() {
 async function initClient() {
   await refreshData();
   const ticketForm = document.querySelector("#clientTicketForm");
-  const attachmentInput = document.querySelector("#clientAttachments");
   ticketForm.addEventListener("submit", submitClientTicket);
-  ticketForm.addEventListener("reset", () => window.setTimeout(renderSelectedFiles, 0));
-  attachmentInput?.addEventListener("change", renderSelectedFiles);
   document.querySelector("#ticketLookupForm").addEventListener("submit", lookupTicket);
   prefillTicketLookup();
   renderClientCatalog();
@@ -187,10 +184,6 @@ function ticketDetail(ticket) {
       ${attemptedFixList(ticket.attemptedFixes)}
     </div>
     <div class="detail-section">
-      <h3>Attachments</h3>
-      ${attachmentList(ticket.attachments)}
-    </div>
-    <div class="detail-section">
       <h3>Requester update</h3>
       <form class="stack-form" id="noteForm">
         <textarea name="note" placeholder="Post an update to the ticket history and requester email."></textarea>
@@ -211,7 +204,7 @@ function ticketDetail(ticket) {
     </div>
     <div class="detail-section danger-zone">
       <h3>Remove ticket</h3>
-      <p class="muted">Delete this ticket and its uploaded attachments permanently.</p>
+      <p class="muted">Delete this ticket permanently.</p>
       <button class="danger-action" type="button" id="deleteTicketButton">Delete ticket</button>
     </div>`;
 }
@@ -230,7 +223,7 @@ function renderDashboard() {
     <article class="insight-card"><span>Open tickets</span><strong>${open.length}</strong></article>
     <article class="insight-card"><span>Overdue</span><strong>${overdue}</strong></article>
     <article class="insight-card"><span>Avg resolution</span><strong>${avgHours}h</strong></article>
-    <article class="insight-card"><span>Attachments</span><strong>${tickets.reduce((sum, ticket) => sum + (ticket.attachments?.length || 0), 0)}</strong></article>
+    <article class="insight-card"><span>Resolved</span><strong>${resolved.length}</strong></article>
     <article class="insight-card wide-card">${deviceHealthBoard(tickets)}</article>
     <article class="insight-card">${barList("Top smart tags", countTags(tickets))}</article>
     <article class="insight-card">${barList("Common statuses", countBy(tickets, "status"))}</article>
@@ -326,14 +319,10 @@ async function submitClientTicket(event) {
   const submitButton = document.querySelector("#clientSubmitButton");
   const originalText = submitButton?.textContent || "Submit ticket";
   try {
-    if (!validateSelectedFiles()) return;
-    const formData = new FormData(form);
+    const data = Object.fromEntries(new FormData(form));
     setClientSubmitting(true);
-    const response = await fetch("/api/tickets", { method: "POST", body: formData });
-    const ticket = await response.json();
-    if (!response.ok) throw new Error(ticket.error ?? "Request failed");
+    const ticket = await api("/api/tickets", { method: "POST", body: data });
     form.reset();
-    renderSelectedFiles();
     renderClientCatalog();
     notice.className = "notice success";
     notice.innerHTML = ticketConfirmation(ticket);
@@ -511,26 +500,6 @@ function prefillTicketLookup() {
   if (ticketId && input) input.value = ticketId;
 }
 
-function renderSelectedFiles() {
-  const input = document.querySelector("#clientAttachments");
-  const target = document.querySelector("#clientFileList");
-  if (!input || !target) return;
-  const files = Array.from(input.files || []);
-  target.innerHTML = files.length
-    ? files.map((file) => `<div>${escapeHtml(file.name)} <span>${formatFileSize(file.size)}</span></div>`).join("")
-    : "";
-}
-
-function validateSelectedFiles() {
-  const input = document.querySelector("#clientAttachments");
-  const notice = document.querySelector("#clientNotice");
-  const oversized = Array.from(input?.files || []).filter((file) => file.size > 10 * 1024 * 1024);
-  if (!oversized.length) return true;
-  notice.className = "notice error";
-  notice.textContent = `${oversized[0].name} is larger than the 10 MB attachment limit.`;
-  return false;
-}
-
 function setClientSubmitting(isSubmitting, label = "Submit ticket") {
   const form = document.querySelector("#clientTicketForm");
   const submitButton = document.querySelector("#clientSubmitButton");
@@ -619,10 +588,6 @@ function fillSelect(select, values) {
 function optionList(values, selected) {
   return values.map((value) => `<option ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("");
 }
-function attachmentList(attachments = []) {
-  if (!attachments.length) return `<p class="muted">No attachments.</p>`;
-  return `<div class="attachment-list">${attachments.map((file) => `<a href="${escapeAttr(file.url)}" target="_blank" rel="noreferrer">${escapeHtml(file.originalName)}</a>`).join("")}</div>`;
-}
 function attemptedFixList(fixes = []) {
   if (!fixes.length) return `<p class="muted">No attempted fixes reported.</p>`;
   return `<div class="tag-row attempted-fix-list">${fixes.map((fix) => `<span class="pill">${escapeHtml(fix)}</span>`).join("")}</div>`;
@@ -705,8 +670,4 @@ function escapeHtml(value) {
 function escapeAttr(value) { return escapeHtml(value); }
 function formatDateTime(value) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
-}
-function formatFileSize(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

@@ -1,2 +1,5 @@
-id,createdAt,updatedAt,status,priority,requester,requesterEmail,department,device,title,assignee,category,description,attachments
-"TKT-2026-4891","2026-05-20T14:22:40.309Z","2026-05-20T14:34:50.277Z","Resolved","Low","Test User","test@example.com","Engineering","VPN","VPN failed for test","Network Support","VPN connection failure","VPN cannot connect and shows an MFA tunnel error.",""
+id,createdAt,updatedAt,status,priority,requester,requesterEmail,department,device,title,assignee,category,description,attemptedFixes,attachments
+"TKT-2026-5367","2026-05-21T12:26:41.878Z","2026-05-21T12:26:41.878Z","Open","Low","Anonymous requester","dsmart@readingedgeacademy.org","test","test","test","Service Desk","General support","test","[""test""]","[]"
+"TKT-2026-6392","2026-05-21T12:17:21.874Z","2026-05-21T12:17:21.874Z","Open","Low","Anonymous requester","dsmart@readingedgeacademy.org","test","test","test","Service Desk","General support","test","","[]"
+"TKT-2026-8012","2026-05-21T12:16:40.631Z","2026-05-21T12:16:40.631Z","Open","Low","Anonymous requester","dsmart@readingedgeacademy.org","test","test","test","Service Desk","General support","test","","[]"
+"TKT-2026-4891","2026-05-20T14:22:40.309Z","2026-05-20T14:34:50.277Z","Resolved","Low","Test User","test@example.com","Engineering","VPN","VPN failed for test","Network Support","VPN connection failure","VPN cannot connect and shows an MFA tunnel error.","",""

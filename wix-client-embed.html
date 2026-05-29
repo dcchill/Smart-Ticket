@@ -28,8 +28,6 @@
       .st-notice{margin-top:12px;color:#667085}.st-success{color:#1d7a4d}.st-error{color:#bb3535}
       .st-row{border:1px solid #d9ddd6;border-radius:8px;padding:11px;margin-top:8px;background:rgba(255,255,255,.72)}
       .st-help{display:block;margin-top:6px;color:#667085;line-height:1.35}
-      .st-files{display:grid;gap:6px;margin-top:8px;color:#667085}
-      .st-files div{display:flex;justify-content:space-between;gap:12px;border:1px solid #d9ddd6;border-radius:8px;padding:8px 10px;background:rgba(255,255,255,.78)}
       .st-confirm{display:grid;gap:8px}.st-confirm p{margin:0;color:#667085}.st-confirm button{justify-self:start}
       .st-btn:disabled,.st-field input:disabled,.st-field select:disabled,.st-field textarea:disabled{cursor:not-allowed;opacity:.72}
       @media(max-width:680px){.st-grid{grid-template-columns:1fr}}
@@ -50,8 +48,6 @@
           ${field("title","Issue summary",'<input name="title" placeholder="Cannot connect to Wi-Fi">')}
           ${field("description","Description",'<textarea name="description" placeholder="Describe symptoms, error messages, timing, and what changed recently."></textarea><small class="st-help">Include any error messages, when it started, and what you already tried.</small>')}
           ${field("attemptedFixes","Attempted fixes",'<textarea name="attemptedFixes" placeholder="Example: restarted the laptop, reconnected to Wi-Fi, tried another browser"></textarea><small class="st-help">List anything already tried so IT can skip repeat steps.</small>')}
-          <label class="st-field"><span>Attachments</span><input name="attachments" id="stAttachments" type="file" multiple><small class="st-help">Optional. You can attach screenshots or documents up to 10 MB each.</small></label>
-          <div class="st-files" id="stFileList" aria-live="polite"></div>
           <div class="st-actions"><button class="st-btn st-secondary" type="reset">Clear</button><button class="st-btn st-primary" id="stSubmitButton" type="submit">Submit ticket</button></div>
         </form>
         <div class="st-notice" id="stNotice"></div>
@@ -92,14 +88,16 @@
     const submitButton = document.getElementById("stSubmitButton");
     const originalText = submitButton.textContent;
     try {
-      if (!validateSelectedFiles()) return;
-      const formData = new FormData(form);
+      const data = Object.fromEntries(new FormData(form));
       setSubmitting(true);
-      const response = await fetch(`${API_BASE}/api/tickets`, { method: "POST", body: formData });
+      const response = await fetch(`${API_BASE}/api/tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
       const ticket = await response.json();
       if (!response.ok) throw new Error(ticket.error || "Request failed");
       form.reset();
-      renderSelectedFiles();
       await init();
       notice.className = "st-notice st-success";
       notice.innerHTML = ticketConfirmation(ticket);
@@ -111,9 +109,6 @@
       setSubmitting(false, originalText);
     }
   });
-
-  document.getElementById("stAttachments").addEventListener("change", renderSelectedFiles);
-  document.getElementById("stTicketForm").addEventListener("reset", () => window.setTimeout(renderSelectedFiles, 0));
 
   document.getElementById("stLookupForm").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -160,20 +155,6 @@
     const input = document.getElementById("stLookupTicketId");
     if (ticketId && input) input.value = ticketId;
   }
-  function renderSelectedFiles() {
-    const files = Array.from(document.getElementById("stAttachments").files || []);
-    document.getElementById("stFileList").innerHTML = files.length
-      ? files.map((file) => `<div>${escapeHtml(file.name)} <span>${formatFileSize(file.size)}</span></div>`).join("")
-      : "";
-  }
-  function validateSelectedFiles() {
-    const notice = document.getElementById("stNotice");
-    const oversized = Array.from(document.getElementById("stAttachments").files || []).filter((file) => file.size > 10 * 1024 * 1024);
-    if (!oversized.length) return true;
-    notice.className = "st-notice st-error";
-    notice.textContent = `${oversized[0].name} is larger than the 10 MB attachment limit.`;
-    return false;
-  }
   function setSubmitting(isSubmitting, label = "Submit ticket") {
     const form = document.getElementById("stTicketForm");
     form.querySelectorAll("button,input,select,textarea").forEach((control) => {
@@ -200,10 +181,6 @@
     } catch {
       if (button) button.textContent = ticketId;
     }
-  }
-  function formatFileSize(bytes) {
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
   function escapeHtml(value) {
     return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");

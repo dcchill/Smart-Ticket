@@ -19,8 +19,8 @@
       <section class="panel client-panel">
         <form class="ticket-form" id="clientTicketForm">
           <div class="form-grid">
-            <label data-client-field="requester"><span>Your name</span><input name="requester" required placeholder="Alex Johnson" /></label>
-            <label data-client-field="requesterEmail"><span>Your email</span><input name="requesterEmail" type="email" required placeholder="alex@example.com" /></label>
+            <label data-client-field="requester"><span>Your name</span><input name="requester" required placeholder="Jane Doe" /></label>
+            <label data-client-field="requesterEmail"><span>Your email</span><input name="requesterEmail" type="email" required placeholder="jdoe@example.com" /></label>
             <label data-client-field="departmentId"><span data-unit-singular>Department</span><select name="departmentId" id="clientDepartment" required></select></label>
             <label data-client-field="deviceId"><span>Device or app</span><select name="deviceId" id="clientDevice" required></select></label>
             <label data-client-field="impact"><span>Impact</span><select name="impact" id="clientImpact" required></select></label>
@@ -37,12 +37,6 @@
             <textarea name="attemptedFixes" placeholder="Example: restarted the laptop, reconnected to Wi-Fi, tried another browser"></textarea>
             <small class="help-text">List anything already tried so IT can skip repeat steps.</small>
           </label>
-          <label>
-            <span>Attachments</span>
-            <input name="attachments" id="clientAttachments" type="file" multiple />
-            <small class="help-text">Optional. You can attach screenshots or documents up to 10 MB each.</small>
-          </label>
-          <div class="file-list" id="clientFileList" aria-live="polite"></div>
           <div class="form-actions">
             <button class="secondary-action" type="reset">Clear</button>
             <button class="primary-action" type="submit" id="clientSubmitButton">Submit ticket</button>

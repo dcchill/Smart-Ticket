@@ -1,6 +1,17 @@
 {
-  "departments": [],
-  "devices": [],
+  "departments": [
+    {
+      "id": "department-1779365699253",
+      "name": "test"
+    }
+  ],
+  "devices": [
+    {
+      "id": "device-1779365701359",
+      "name": "test",
+      "owner": "Service Desk"
+    }
+  ],
   "knowledge": [
     {
       "id": "kb-vpn",
@@ -77,6 +88,10 @@
         "enabled": false,
         "required": false
       },
+      "attemptedFixes": {
+        "enabled": true,
+        "required": false
+      },
       "title": {
         "enabled": true,
         "required": true
@@ -91,9 +106,98 @@
       "Student",
       "Class"
     ],
+    "smtp": {
+      "host": "smtp.gmail.com",
+      "port": 465,
+      "user": "dsmart@readingedgeacademy.org",
+      "pass": "aree mxmi zbwx tdzh ",
+      "from": "dsmart@readingedgeacademy.org",
+      "secure": true
+    },
     "allowedOrigins": []
   },
   "tickets": [
+    {
+      "id": "TKT-2026-5367",
+      "requester": "Anonymous requester",
+      "requesterEmail": "dsmart@readingedgeacademy.org",
+      "phone": "",
+      "departmentId": "department-1779365699253",
+      "department": "test",
+      "deviceId": "device-1779365701359",
+      "device": "test",
+      "impact": "Self",
+      "attemptedFixes": [
+        "test"
+      ],
+      "title": "test",
+      "description": "test",
+      "status": "Open",
+      "attachments": [],
+      "priority": "Low",
+      "category": "General support",
+      "assignee": "Service Desk",
+      "slaHours": 72,
+      "recommendation": "Collect logs, confirm scope, reproduce the issue, and document the next support action.",
+      "createdAt": "2026-05-21T12:26:41.878Z",
+      "updatedAt": "2026-05-21T12:26:41.878Z",
+      "activity": [
+        "May 21, 8:26 AM - Ticket created by Anonymous requester.",
+        "May 21, 8:26 AM - Routed to Service Desk as Low."
+      ]
+    },
+    {
+      "id": "TKT-2026-6392",
+      "requester": "Anonymous requester",
+      "requesterEmail": "dsmart@readingedgeacademy.org",
+      "phone": "",
+      "departmentId": "department-1779365699253",
+      "department": "test",
+      "deviceId": "device-1779365701359",
+      "device": "test",
+      "impact": "Self",
+      "title": "test",
+      "description": "test",
+      "status": "Open",
+      "attachments": [],
+      "priority": "Low",
+      "category": "General support",
+      "assignee": "Service Desk",
+      "slaHours": 72,
+      "recommendation": "Collect logs, confirm scope, reproduce the issue, and document the next support action.",
+      "createdAt": "2026-05-21T12:17:21.874Z",
+      "updatedAt": "2026-05-21T12:17:21.874Z",
+      "activity": [
+        "May 21, 8:17 AM - Ticket created by Anonymous requester.",
+        "May 21, 8:17 AM - Routed to Service Desk as Low."
+      ]
+    },
+    {
+      "id": "TKT-2026-8012",
+      "requester": "Anonymous requester",
+      "requesterEmail": "dsmart@readingedgeacademy.org",
+      "phone": "",
+      "departmentId": "department-1779365699253",
+      "department": "test",
+      "deviceId": "device-1779365701359",
+      "device": "test",
+      "impact": "Self",
+      "title": "test",
+      "description": "test",
+      "status": "Open",
+      "attachments": [],
+      "priority": "Low",
+      "category": "General support",
+      "assignee": "Service Desk",
+      "slaHours": 72,
+      "recommendation": "Collect logs, confirm scope, reproduce the issue, and document the next support action.",
+      "createdAt": "2026-05-21T12:16:40.631Z",
+      "updatedAt": "2026-05-21T12:16:40.631Z",
+      "activity": [
+        "May 21, 8:16 AM - Ticket created by Anonymous requester.",
+        "May 21, 8:16 AM - Routed to Service Desk as Low."
+      ]
+    },
     {
       "id": "TKT-2026-4891",
       "requester": "Test User",

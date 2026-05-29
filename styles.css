@@ -381,23 +381,10 @@ input:focus, select:focus, textarea:focus {
   padding: 14px;
   background: #fff5f2;
 }
-.attachment-list { display: grid; gap: 8px; }
-.attachment-list a { color: var(--blue); font-weight: 800; }
 .notice { margin-top: 14px; color: var(--muted); }
 .notice.success { color: var(--green); }
 .notice.error { color: var(--red); }
 .help-text { display: block; margin-top: 6px; color: var(--muted); line-height: 1.35; }
-.file-list { display: grid; gap: 6px; margin-top: -6px; color: var(--muted); }
-.file-list div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  background: rgba(255,255,255,.78);
-}
-.file-list span { white-space: nowrap; }
 .confirmation { display: grid; gap: 8px; align-items: start; }
 .confirmation p { margin: 0; color: var(--muted); }
 .confirmation .secondary-action { justify-self: start; }

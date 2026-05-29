@@ -8,7 +8,6 @@ const tls = require("tls");
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
-const UPLOAD_DIR = path.join(ROOT, "uploads");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 const CSV_PATH = path.join(DATA_DIR, "tickets.csv");
 const OUTBOX_PATH = path.join(DATA_DIR, "email-outbox.jsonl");
@@ -109,7 +108,7 @@ async function routeApi(req, res, url) {
   const resource = parts[1];
   const id = parts[2];
 
-  if (req.method === "POST" && resource === "tickets") return createTicket(req, res, await readTicketInput(req));
+  if (req.method === "POST" && resource === "tickets") return createTicket(req, res, await readJson(req));
   if (req.method === "GET" && resource === "tickets" && id && parts[3] === "lookup") return lookupTicket(res, id, url.searchParams.get("email"));
   if (req.method === "GET" && resource === "client-options") {
     return sendJson(res, 200, {
@@ -140,8 +139,7 @@ async function routeApi(req, res, url) {
   sendJson(res, 404, { error: "Route not found" });
 }
 
-function createTicket(req, res, payload) {
-  const { fields: input, attachments } = payload;
+function createTicket(req, res, input) {
   const fields = clientFieldSettings();
   requireFields(input, CLIENT_FIELD_NAMES.filter((field) => fields[field].enabled && fields[field].required));
   const department = fields.departmentId.enabled ? store.departments.find((item) => item.id === input.departmentId) : null;
@@ -166,7 +164,6 @@ function createTicket(req, res, payload) {
     title: normalized.title,
     description: normalized.description,
     status: store.settings.defaultStatus || "Open",
-    attachments,
     ...triage,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -201,10 +198,6 @@ function deleteTicket(res, id) {
   const ticket = store.tickets.find((item) => item.id === id);
   if (!ticket) return sendJson(res, 404, { error: "Ticket not found" });
 
-  for (const attachment of ticket.attachments || []) {
-    const target = path.join(UPLOAD_DIR, path.basename(attachment.storedName || ""));
-    if (target.startsWith(UPLOAD_DIR) && fs.existsSync(target)) fs.unlinkSync(target);
-  }
   store.tickets = store.tickets.filter((item) => item.id !== id);
   persist();
   sendJson(res, 200, { ok: true });
@@ -450,7 +443,6 @@ function slaState(ticket) {
 
 function loadStore() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   if (!fs.existsSync(STORE_PATH)) {
     fs.writeFileSync(STORE_PATH, JSON.stringify(defaults, null, 2));
     writeCsv(defaults.tickets);
@@ -477,7 +469,7 @@ function persist() {
   writeCsv(store.tickets);
 }
 function writeCsv(tickets) {
-  const headers = ["id", "createdAt", "updatedAt", "status", "priority", "requester", "requesterEmail", "department", "device", "title", "assignee", "category", "description", "attemptedFixes", "smartTags", "attachments"];
+  const headers = ["id", "createdAt", "updatedAt", "status", "priority", "requester", "requesterEmail", "department", "device", "title", "assignee", "category", "description", "attemptedFixes", "smartTags"];
   const rows = [headers.join(","), ...tickets.map((ticket) => {
     const exportTicket = { ...ticket, smartTags: smartTags(ticket) };
     return headers.map((field) => csv(exportTicket[field])).join(",");
@@ -741,17 +733,6 @@ function readJson(req) {
     req.on("error", reject);
   });
 }
-async function readTicketInput(req) {
-  const contentType = req.headers["content-type"] || "";
-  if (!contentType.startsWith("multipart/form-data")) {
-    return { fields: await readJson(req), attachments: [] };
-  }
-
-  const boundary = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/)?.[1] || contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/)?.[2];
-  if (!boundary) throw new Error("Missing multipart boundary");
-  const body = await readBuffer(req);
-  return parseMultipart(body, boundary);
-}
 function readBuffer(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -760,63 +741,15 @@ function readBuffer(req) {
     req.on("error", reject);
   });
 }
-function parseMultipart(body, boundary) {
-  const fields = {};
-  const attachments = [];
-  const delimiter = Buffer.from(`--${boundary}`);
-  let start = body.indexOf(delimiter);
-
-  while (start !== -1) {
-    start += delimiter.length;
-    if (body.slice(start, start + 2).toString() === "--") break;
-    if (body.slice(start, start + 2).toString() === "\r\n") start += 2;
-    const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), start);
-    if (headerEnd === -1) break;
-    const next = body.indexOf(delimiter, headerEnd + 4);
-    if (next === -1) break;
-
-    const headers = body.slice(start, headerEnd).toString("utf8");
-    const content = body.slice(headerEnd + 4, Math.max(headerEnd + 4, next - 2));
-    const name = headers.match(/name="([^"]+)"/)?.[1];
-    const filename = headers.match(/filename="([^"]*)"/)?.[1];
-
-    if (name && filename) {
-      const saved = saveAttachment(filename, content);
-      if (saved) attachments.push(saved);
-    } else if (name) {
-      appendMultipartField(fields, name, content.toString("utf8"));
-    }
-    start = next;
-  }
-
-  return { fields, attachments };
-}
-function appendMultipartField(fields, name, value) {
-  if (Object.prototype.hasOwnProperty.call(fields, name)) {
-    fields[name] = Array.isArray(fields[name]) ? [...fields[name], value] : [fields[name], value];
-  } else {
-    fields[name] = value;
-  }
-}
-function saveAttachment(filename, content) {
-  if (!filename || !content.length) return null;
-  if (content.length > 10 * 1024 * 1024) throw new Error("Attachment is larger than 10 MB");
-  const originalName = path.basename(filename).replace(/[^\w.\- ()]/g, "_");
-  const ext = path.extname(originalName).slice(0, 16);
-  const storedName = `${Date.now()}-${crypto.randomUUID()}${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, storedName), content);
-  return {
-    originalName,
-    storedName,
-    size: content.length,
-    url: `/uploads/${storedName}`,
-  };
-}
 function sendJson(res, status, data) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
 }
 function serveStatic(req, res, pathname) {
+  if (pathname === "/uploads" || pathname.startsWith("/uploads/")) {
+    res.writeHead(404);
+    return res.end("Not found");
+  }
   if ((pathname === "/data/tickets.csv" || pathname === "/data/store.json" || pathname === "/data/email-outbox.jsonl") && !isAdminAuthenticated(req)) {
     res.writeHead(302, { Location: "/admin-login" });
     return res.end();
