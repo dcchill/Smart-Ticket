@@ -7,6 +7,9 @@ A local smart IT ticket system with separate admin and client portals.
 ```powershell
 node server.js
 ```
+## Or
+
+start-server.bat
 
 Open:
 
